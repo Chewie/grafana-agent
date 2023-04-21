@@ -21,11 +21,11 @@ import (
 // A lot of the TestDecode tests were inspired by tests in the Otel repo:
 // https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.63.0/processor/attributesprocessor/testdata/config.yaml
 
-func TestDecode_Insert(t *testing.T) {
+func Test_Insert(t *testing.T) {
 	cfg := `
 		action {
 			key = "attribute1"
-			value = 123
+			value = 111111
 			action = "insert"
 		}
 		action {
@@ -47,13 +47,56 @@ func TestDecode_Insert(t *testing.T) {
 
 	action := &otelObj.Actions[0]
 	require.Equal(t, "attribute1", action.Key)
-	require.Equal(t, 123, action.Value)
+	require.Equal(t, 111111, action.Value)
 	require.Equal(t, "insert", string(action.Action))
 
 	action = &otelObj.Actions[1]
 	require.Equal(t, "string key", action.Key)
 	require.Equal(t, "anotherkey", action.Value)
 	require.Equal(t, "insert", string(action.Action))
+
+	var inputTrace = `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "attribute1",
+						"value": { "intValue": "0" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	// We expect:
+	// * "attribute1" to stay the same because it already exists
+	// * "string key" will be inserted.
+	expectedOutputTrace := `{
+		"resourceSpans": [{
+			"resource": {},
+			"scopeSpans": [{
+				"scope": {},
+				"spans": [{
+						"traceId": "",
+						"spanId": "",
+						"parentSpanId": "",
+						"name": "TestSpan",
+						"attributes": [{
+							"key": "attribute1",
+							"value": { "intValue": "0" }
+						},
+						{
+							"key": "string key",
+							"value": { "stringValue": "anotherkey" }
+						}],
+						"status": {}
+					}]
+				}]
+			}]
+	}`
+
+	testRunProcessor(t, cfg, inputTrace, expectedOutputTrace)
 }
 
 func TestDecode_RegexExtract(t *testing.T) {
@@ -114,9 +157,58 @@ func TestDecode_Update(t *testing.T) {
 	require.Equal(t, "db.secret", action.Key)
 	require.Equal(t, "redacted", action.Value)
 	require.Equal(t, "update", string(action.Action))
+
+	var inputTrace = `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "foo",
+						"value": { "intValue": "11111" }
+					},
+					{
+						"key": "boo",
+						"value": { "intValue": "22222" }
+					},
+					{
+						"key": "db.secret",
+						"value": { "stringValue": "top_secret" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	// We expect:
+	// * "attribute1" to stay the same because it already exists
+	// * "string key" will be inserted.
+	expectedOutputTrace := `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "foo",
+						"value": { "intValue": "11111" }
+					},
+					{
+						"key": "boo",
+						"value": { "intValue": "11111" }
+					},
+					{
+						"key": "db.secret",
+						"value": { "stringValue": "redacted" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	testRunProcessor(t, cfg, inputTrace, expectedOutputTrace)
 }
 
-func TestDecode_Upsert(t *testing.T) {
+func Test_Upsert(t *testing.T) {
 	cfg := `
 		action {
 			key = "region"
@@ -149,9 +241,50 @@ func TestDecode_Upsert(t *testing.T) {
 	require.Equal(t, "new_user_key", action.Key)
 	require.Equal(t, "user_key", action.FromAttribute)
 	require.Equal(t, "upsert", string(action.Action))
+
+	var inputTrace = `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "user_key",
+						"value": { "intValue": "11111" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	// We expect:
+	// * "attribute1" to stay the same because it already exists
+	// * "string key" will be inserted.
+	expectedOutputTrace := `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "user_key",
+						"value": { "intValue": "11111" }
+					},
+					{
+						"key": "region",
+						"value": { "stringValue": "planet-earth" }
+					},
+					{
+						"key": "new_user_key",
+						"value": { "intValue": "11111" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	testRunProcessor(t, cfg, inputTrace, expectedOutputTrace)
 }
 
-func TestDecode_Delete(t *testing.T) {
+func Test_Delete(t *testing.T) {
 	cfg := `
 		action {
 			key = "credit_card"
@@ -180,9 +313,50 @@ func TestDecode_Delete(t *testing.T) {
 	action = &otelObj.Actions[1]
 	require.Equal(t, "duplicate_key", action.Key)
 	require.Equal(t, "delete", string(action.Action))
+
+	var inputTrace = `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "credit_card",
+						"value": { "intValue": "11111" }
+					},
+					{
+						"key": "duplicate_key",
+						"value": { "intValue": "22222" }
+					},
+					{
+						"key": "db.secret",
+						"value": { "stringValue": "top_secret" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	// We expect:
+	// * "attribute1" to stay the same because it already exists
+	// * "string key" will be inserted.
+	expectedOutputTrace := `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "db.secret",
+						"value": { "stringValue": "top_secret" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	testRunProcessor(t, cfg, inputTrace, expectedOutputTrace)
 }
 
-func TestDecode_Hash(t *testing.T) {
+func Test_Hash(t *testing.T) {
 	cfg := `
 		action {
 			key = "user.email"
@@ -203,9 +377,58 @@ func TestDecode_Hash(t *testing.T) {
 	action := &otelObj.Actions[0]
 	require.Equal(t, "user.email", action.Key)
 	require.Equal(t, "hash", string(action.Action))
+
+	var inputTrace = `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "foo",
+						"value": { "intValue": "11111" }
+					},
+					{
+						"key": "boo",
+						"value": { "intValue": "22222" }
+					},
+					{
+						"key": "user.email",
+						"value": { "stringValue": "user@email.com" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	// We expect:
+	// * "attribute1" to stay the same because it already exists
+	// * "string key" will be inserted.
+	expectedOutputTrace := `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "foo",
+						"value": { "intValue": "11111" }
+					},
+					{
+						"key": "boo",
+						"value": { "intValue": "22222" }
+					},
+					{
+						"key": "user.email",
+						"value": { "stringValue": "36687c352204c27d9e228a9b34d00c8a1d36a000" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	testRunProcessor(t, cfg, inputTrace, expectedOutputTrace)
 }
 
-func TestDecode_Convert(t *testing.T) {
+func Test_Convert(t *testing.T) {
 	cfg := `
 		action {
 			key = "http.status_code"
@@ -228,9 +451,42 @@ func TestDecode_Convert(t *testing.T) {
 	require.Equal(t, "http.status_code", action.Key)
 	require.Equal(t, "int", action.ConvertedType)
 	require.Equal(t, "convert", string(action.Action))
+
+	var inputTrace = `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "http.status_code",
+						"value": { "stringValue": "500" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	// We expect:
+	// * "attribute1" to stay the same because it already exists
+	// * "string key" will be inserted.
+	expectedOutputTrace := `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "http.status_code",
+						"value": { "intValue": "500" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	testRunProcessor(t, cfg, inputTrace, expectedOutputTrace)
 }
 
-func TestDecode_ExcludeMulti(t *testing.T) {
+func Test_ExcludeMulti(t *testing.T) {
 	cfg := `
 	exclude {
 		match_type = "strict"
@@ -286,6 +542,147 @@ func TestDecode_ExcludeMulti(t *testing.T) {
 	action = &otelObj.Actions[1]
 	require.Equal(t, "duplicate_key", action.Key)
 	require.Equal(t, "delete", string(action.Action))
+
+	var inputTrace = `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "service.name",
+						"value": { "stringValue": "svcA" }
+					},
+					{
+						"key": "env",
+						"value": { "stringValue": "dev" }
+					},
+					{
+						"key": "test_request",
+						"value": { "stringValue": "req_body" }
+					},
+					{
+						"key": "credit_card",
+						"value": { "stringValue": "0000-00000-00000" }
+					},
+					{
+						"key": "duplicate_key",
+						"value": { "stringValue": "deuplicateduplicatekey" }
+					}]
+				},
+				{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "service.name",
+						"value": { "stringValue": "svcB" }
+					},
+					{
+						"key": "env",
+						"value": { "stringValue": "dev" }
+					},
+					{
+						"key": "test_request",
+						"value": { "stringValue": "req_body" }
+					},
+					{
+						"key": "credit_card",
+						"value": { "stringValue": "0000-00000-00000" }
+					},
+					{
+						"key": "duplicate_key",
+						"value": { "stringValue": "deuplicateduplicatekey" }
+					}]
+				},
+				{
+					"name": "TestSpan",
+					"attributes": [{
+						"key": "service.name",
+						"value": { "stringValue": "svcC" }
+					},
+					{
+						"key": "env",
+						"value": { "stringValue": "dev" }
+					},
+					{
+						"key": "test_request",
+						"value": { "stringValue": "req_body" }
+					},
+					{
+						"key": "credit_card",
+						"value": { "stringValue": "0000-00000-00000" }
+					},
+					{
+						"key": "duplicate_key",
+						"value": { "stringValue": "deuplicateduplicatekey" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	// We expect:
+	// * "attribute1" to stay the same because it already exists
+	// * "string key" will be inserted.
+	expectedOutputTrace := `{
+		"resourceSpans": [{
+			"scopeSpans": [{
+				"spans": [{
+					"name": "TestSpa1",
+					"attributes": [{
+						"key": "service.name",
+						"value": { "stringValue": "svcA" }
+					},
+					{
+						"key": "env",
+						"value": { "stringValue": "dev" }
+					},
+					{
+						"key": "test_request",
+						"value": { "stringValue": "req_body" }
+					}]
+				},
+				{
+					"name": "TestSpan2",
+					"attributes": [{
+						"key": "service.name",
+						"value": { "stringValue": "svcB" }
+					},
+					{
+						"key": "env",
+						"value": { "stringValue": "dev" }
+					},
+					{
+						"key": "test_request",
+						"value": { "stringValue": "req_body" }
+					}]
+				},
+				{
+					"name": "TestSpan3",
+					"attributes": [{
+						"key": "service.name",
+						"value": { "stringValue": "svcC" }
+					},
+					{
+						"key": "env",
+						"value": { "stringValue": "dev" }
+					},
+					{
+						"key": "test_request",
+						"value": { "stringValue": "req_body" }
+					},
+					{
+						"key": "credit_card",
+						"value": { "stringValue": "0000-00000-00000" }
+					},
+					{
+						"key": "duplicate_key",
+						"value": { "stringValue": "deuplicateduplicatekey" }
+					}]
+				}]
+			}]
+		}]
+	}`
+
+	testRunProcessor(t, cfg, inputTrace, expectedOutputTrace)
 }
 
 func TestDecode_ExcludeResources(t *testing.T) {
@@ -885,31 +1282,15 @@ func TestDecode_FromContext(t *testing.T) {
 	require.Equal(t, "insert", string(action.Action))
 }
 
-func TestRun(t *testing.T) {
+func testRunProcessor(t *testing.T, processorConfig string, inputTraceJson string, expectedTraceOutputJson string) {
 	ctx := componenttest.TestContext(t)
 	l := util.TestLogger(t)
 
 	ctrl, err := componenttest.NewControllerFromID(l, "otelcol.processor.attributes")
 	require.NoError(t, err)
 
-	cfg := `
-	action {
-		key = "attribute1"
-		value = 123
-		action = "insert"
-	}
-	action {
-		key = "string key"
-		value = "anotherkey"
-		action = "insert"
-	}
-
-	output {
-		// no-op: will be overridden by test code.
-	}
-	`
 	var args attributes.Arguments
-	require.NoError(t, river.Unmarshal([]byte(cfg), &args))
+	require.NoError(t, river.Unmarshal([]byte(processorConfig), &args))
 
 	// Override our arguments so traces get forwarded to traceCh.
 	traceCh := make(chan ptrace.Traces)
@@ -923,6 +1304,8 @@ func TestRun(t *testing.T) {
 	require.NoError(t, ctrl.WaitRunning(time.Second), "component never started")
 	require.NoError(t, ctrl.WaitExports(time.Second), "component never exported anything")
 
+	inputTrace := createTestTraces(inputTraceJson)
+
 	// Send traces in the background to our processor.
 	go func() {
 		exports := ctrl.Exports().(otelcol.ConsumerExports)
@@ -932,7 +1315,7 @@ func TestRun(t *testing.T) {
 			MaxBackoff: 100 * time.Millisecond,
 		})
 		for bo.Ongoing() {
-			err := exports.Input.ConsumeTraces(ctx, createTestTraces())
+			err := exports.Input.ConsumeTraces(ctx, inputTrace)
 			if err != nil {
 				level.Error(l).Log("msg", "failed to send traces", "err", err)
 				bo.Wait()
@@ -943,19 +1326,16 @@ func TestRun(t *testing.T) {
 		}
 	}()
 
-	//TODO: Try changing actual attributes, just to sanity checks that everything works?
-
 	// Wait for our processor to finish and forward data to traceCh.
 	select {
 	case <-time.After(time.Second):
 		require.FailNow(t, "failed waiting for traces")
 	case tr := <-traceCh:
-		require.Equal(t, 1, tr.SpanCount())
+		trStr := marshalTraces(tr)
+		expStr := marshalTraces(createTestTraces(expectedTraceOutputJson))
+		require.JSONEq(t, expStr, trStr)
 	}
 }
-
-//TODO: makeTracesOutput and createTestTraces were copied from other tests.
-//      Import them from a common go file?
 
 // makeTracesOutput returns ConsumerArguments which will forward traces to the
 // provided channel.
@@ -976,23 +1356,22 @@ func makeTracesOutput(ch chan ptrace.Traces) *otelcol.ConsumerArguments {
 	}
 }
 
-func createTestTraces() ptrace.Traces {
-	// Matches format from the protobuf definition:
-	// https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/trace/v1/trace.proto
-	var bb = `{
-		"resource_spans": [{
-			"scope_spans": [{
-				"spans": [{
-					"name": "TestSpan"
-				}]
-			}]
-		}]
-	}`
-
+// traceJson should match format from the protobuf definition:
+// https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/trace/v1/trace.proto
+func createTestTraces(traceJson string) ptrace.Traces {
 	decoder := &ptrace.JSONUnmarshaler{}
-	data, err := decoder.UnmarshalTraces([]byte(bb))
+	data, err := decoder.UnmarshalTraces([]byte(traceJson))
 	if err != nil {
 		panic(err)
 	}
 	return data
+}
+
+func marshalTraces(trace ptrace.Traces) string {
+	marshaler := &ptrace.JSONMarshaler{}
+	data, err := marshaler.MarshalTraces(trace)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }
